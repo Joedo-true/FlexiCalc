@@ -1,0 +1,967 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="FlexiCalc — интерактивный калькулятор стоимости ремонта. Пошаговый расчёт с мгновенной ценой и заявкой." />
+  <meta name="color-scheme" content="light dark" />
+  <title>FlexiCalc — Калькулятор стоимости ремонта</title>
+
+  <style>
+    /* =========================================================================
+       FlexiCalc — самодостаточный виджет-калькулятор (single-file).
+       Открывается двойным кликом по index.html: без сборки, без CDN, офлайн.
+
+       ТЕМА: чтобы подстроить виджет под фирменные цвета клиента —
+       поменяйте --brand / --brand-2 / --accent ниже.
+       ========================================================================= */
+    :root{
+      /* ── Брендовая палитра (меняйте под клиента) ──────────────────────── */
+      --brand:      #6d5efc;
+      --brand-2:    #9b6cff;
+      --brand-ink:  #4b3ad6;
+      --accent:     #f6b73c;
+
+      /* ── Нейтральные токены ──────────────────────────────────────────── */
+      --bg-0:  #0b0c1a;
+      --bg-1:  #141433;
+      --bg-2:  #221a4d;
+      --card:  #ffffff;
+      --text:  #12132a;
+      --muted: #6b7185;
+      --soft:  #9aa0b4;
+      --line:  #eceef6;
+      --line-2:#e2e5f0;
+      --fill:  #f6f7fc;
+      --good:  #17a673;
+      --bad:   #ef4062;
+      --ring:  rgba(109,94,252,.30);
+
+      --radius:   22px;
+      --radius-s: 14px;
+      --shadow:   0 30px 70px -30px rgba(20,16,60,.55), 0 12px 32px -18px rgba(20,16,60,.35);
+      --shadow-s: 0 8px 24px -12px rgba(20,16,60,.28);
+      --ease:     cubic-bezier(.22,.61,.36,1);
+      --ease-out: cubic-bezier(.16,1,.3,1);
+    }
+
+    @media (prefers-color-scheme: dark){
+      :root{
+        --card:  #14152b;
+        --text:  #f2f3fb;
+        --muted: #a4a9c2;
+        --soft:  #7d83a0;
+        --line:  #262842;
+        --line-2:#2f3252;
+        --fill:  #1b1d38;
+        --ring:  rgba(155,108,255,.34);
+        --shadow: 0 34px 80px -30px rgba(0,0,0,.7), 0 12px 34px -18px rgba(0,0,0,.5);
+        --shadow-s: 0 10px 28px -14px rgba(0,0,0,.55);
+      }
+    }
+
+    *,*::before,*::after{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      color:var(--text);
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
+      background:
+        radial-gradient(1200px 640px at 12% -8%, rgba(155,108,255,.35), transparent 60%),
+        radial-gradient(1000px 620px at 108% 4%, rgba(246,183,60,.16), transparent 55%),
+        radial-gradient(900px 700px at 50% 120%, rgba(109,94,252,.30), transparent 60%),
+        linear-gradient(160deg, var(--bg-0), var(--bg-1) 46%, var(--bg-2));
+      background-attachment: fixed;
+      min-height:100dvh;
+    }
+    /* мягкие «плавающие» световые пятна на фоне */
+    .aura{ position:fixed; inset:0; overflow:hidden; pointer-events:none; z-index:0; }
+    .aura b{
+      position:absolute; border-radius:50%; filter:blur(60px); opacity:.5;
+      animation: float 18s var(--ease) infinite alternate;
+    }
+    .aura b:nth-child(1){ width:340px;height:340px; left:-70px; top:8%;  background:rgba(155,108,255,.5); }
+    .aura b:nth-child(2){ width:300px;height:300px; right:-60px; top:30%; background:rgba(246,183,60,.32); animation-delay:-6s; }
+    .aura b:nth-child(3){ width:380px;height:380px; left:30%; bottom:-120px; background:rgba(109,94,252,.5); animation-delay:-11s; }
+    @keyframes float{ to{ transform:translate3d(0,-26px,0) scale(1.08); } }
+
+    .stage{
+      position:relative; z-index:1;
+      min-height:100dvh;
+      display:flex; flex-direction:column; align-items:center;
+      padding:28px 18px calc(150px + env(safe-area-inset-bottom));
+    }
+    .brandline{
+      display:flex; align-items:center; gap:10px; color:#fff;
+      margin:6px 0 20px; font-weight:800; letter-spacing:.2px;
+    }
+    .brandline .logo{
+      width:38px;height:38px;border-radius:11px; display:grid;place-items:center;
+      background:linear-gradient(145deg,var(--brand),var(--brand-2));
+      box-shadow:0 10px 24px -8px rgba(109,94,252,.8), inset 0 1px 0 rgba(255,255,255,.35);
+      color:#fff;
+    }
+    .brandline .logo svg{ width:22px;height:22px; }
+    .brandline .name{ font-size:19px; }
+    .brandline .name span{ opacity:.7; font-weight:600; }
+
+    /* ── Карточка виджета ─────────────────────────────────────────────── */
+    .card{
+      width:min(560px, 100%);
+      background:var(--card);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      border:1px solid rgba(255,255,255,.10);
+      overflow:hidden;
+      position:relative;
+    }
+    .card::before{ /* тонкая верхняя подсветка */
+      content:""; position:absolute; inset:0 0 auto 0; height:5px;
+      background:linear-gradient(90deg,var(--brand),var(--accent),var(--brand-2));
+      opacity:.95;
+    }
+    .head{ padding:26px 26px 6px; }
+    .head h1{ margin:0; font-size:22px; font-weight:850; letter-spacing:-.2px; }
+    .head p{ margin:7px 0 0; color:var(--muted); font-size:14px; line-height:1.5; }
+
+    .trust{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+    .trust .chip{
+      display:inline-flex; align-items:center; gap:6px;
+      font-size:12px; color:var(--muted); font-weight:600;
+      background:var(--fill); border:1px solid var(--line);
+      padding:6px 10px; border-radius:999px;
+    }
+    .trust .chip svg{ width:14px;height:14px; color:var(--brand); }
+
+    /* ── Прогресс ─────────────────────────────────────────────────────── */
+    .progress{ padding:20px 26px 4px; }
+    .progress .row{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:9px; }
+    .progress .step-of{ font-size:12.5px; font-weight:700; color:var(--brand-ink); letter-spacing:.2px; }
+    @media (prefers-color-scheme: dark){ .progress .step-of{ color:var(--brand-2); } }
+    .progress .step-name{ font-size:12.5px; color:var(--soft); font-weight:600; }
+    .bar{ height:9px; border-radius:999px; background:var(--fill); overflow:hidden; border:1px solid var(--line); }
+    .bar > i{
+      display:block; height:100%; width:25%;
+      background:linear-gradient(90deg,var(--brand),var(--brand-2));
+      border-radius:999px;
+      box-shadow:0 0 14px rgba(109,94,252,.55);
+      transition:width .55s var(--ease-out);
+    }
+    .dots{ display:flex; gap:7px; margin-top:12px; }
+    .dots i{
+      flex:1; height:4px; border-radius:999px; background:var(--line-2);
+      transition:background .4s var(--ease), transform .4s var(--ease);
+    }
+    .dots i.done{ background:linear-gradient(90deg,var(--brand),var(--brand-2)); }
+    .dots i.now{ background:var(--brand); transform:scaleY(1.5); }
+
+    /* ── Область шага (анимации переходов) ────────────────────────────── */
+    .content{ padding:16px 26px 24px; min-height:262px; }
+    .step-title{ font-size:16.5px; font-weight:800; margin:2px 0 3px; }
+    .step-sub{ font-size:13px; color:var(--muted); margin:0 0 16px; line-height:1.5; }
+
+    @keyframes enterRight{ from{ opacity:0; transform:translateX(34px);} to{ opacity:1; transform:none;} }
+    @keyframes enterLeft{ from{ opacity:0; transform:translateX(-34px);} to{ opacity:1; transform:none;} }
+    @keyframes exitLeft{ from{ opacity:1; transform:none;} to{ opacity:0; transform:translateX(-30px);} }
+    @keyframes exitRight{ from{ opacity:1; transform:none;} to{ opacity:0; transform:translateX(30px);} }
+    .anim-enter-right{ animation:enterRight .42s var(--ease-out) both; }
+    .anim-enter-left{ animation:enterLeft .42s var(--ease-out) both; }
+    .anim-exit-left{ animation:exitLeft .2s var(--ease) both; }
+    .anim-exit-right{ animation:exitRight .2s var(--ease) both; }
+
+    @keyframes rise{ from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:none;} }
+    .stagger > *{ animation:rise .5s var(--ease-out) both; }
+    .stagger > *:nth-child(1){ animation-delay:.02s; }
+    .stagger > *:nth-child(2){ animation-delay:.07s; }
+    .stagger > *:nth-child(3){ animation-delay:.12s; }
+    .stagger > *:nth-child(4){ animation-delay:.17s; }
+    .stagger > *:nth-child(5){ animation-delay:.22s; }
+    .stagger > *:nth-child(6){ animation-delay:.27s; }
+
+    /* ── Шаг 1: карточки тарифов ──────────────────────────────────────── */
+    .cards{ display:grid; gap:11px; }
+    .tcard{
+      display:flex; align-items:center; gap:14px; text-align:left; width:100%;
+      padding:15px 16px; border-radius:var(--radius-s); cursor:pointer;
+      background:var(--card); border:1.5px solid var(--line-2);
+      transition:border-color .22s var(--ease), transform .22s var(--ease), box-shadow .22s var(--ease), background .22s var(--ease);
+      position:relative;
+    }
+    .tcard:hover{ transform:translateY(-2px); border-color:var(--brand); box-shadow:var(--shadow-s); }
+    .tcard:focus-visible{ outline:none; box-shadow:0 0 0 4px var(--ring); }
+    .tcard .ico{
+      width:46px;height:46px;flex:none;border-radius:12px;display:grid;place-items:center;
+      background:var(--fill); color:var(--brand); transition:.22s var(--ease);
+    }
+    .tcard .ico svg{ width:24px;height:24px; }
+    .tcard .body{ flex:1; min-width:0; }
+    .tcard .t{ display:block; font-weight:750; font-size:15px; }
+    .tcard .d{ display:block; font-size:12.5px; color:var(--muted); margin-top:2px; }
+    .tcard .rate{ font-size:12.5px; color:var(--soft); font-weight:650; white-space:nowrap; }
+    .tcard .radio{
+      width:22px;height:22px;flex:none;border-radius:50%;border:2px solid var(--line-2);
+      display:grid;place-items:center; transition:.22s var(--ease); color:#fff;
+    }
+    .tcard .radio svg{ width:14px;height:14px; opacity:0; transform:scale(.4); transition:.24s var(--ease-out); }
+    .tcard[aria-pressed="true"]{
+      border-color:var(--brand);
+      background:linear-gradient(180deg, color-mix(in srgb, var(--brand) 8%, var(--card)), var(--card));
+      box-shadow:0 0 0 3px var(--ring), var(--shadow-s);
+    }
+    .tcard[aria-pressed="true"] .ico{ background:linear-gradient(145deg,var(--brand),var(--brand-2)); color:#fff; transform:scale(1.03); }
+    .tcard[aria-pressed="true"] .radio{ border-color:var(--brand); background:var(--brand); }
+    .tcard[aria-pressed="true"] .radio svg{ opacity:1; transform:none; }
+
+    /* ── Шаг 2: слайдер + число ───────────────────────────────────────── */
+    .scaler{ }
+    .amount-box{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      background:var(--fill); border:1px solid var(--line); border-radius:var(--radius-s);
+      padding:14px 16px; margin-bottom:20px;
+    }
+    .amount-box .lab{ font-size:13px; color:var(--muted); font-weight:600; }
+    .amount-field{ display:flex; align-items:baseline; gap:6px; }
+    .amount-field input{
+      width:92px; border:none; background:transparent; text-align:right;
+      font-size:30px; font-weight:850; color:var(--text); letter-spacing:-.5px;
+      font-variant-numeric:tabular-nums; -moz-appearance:textfield;
+    }
+    .amount-field input::-webkit-outer-spin-button,
+    .amount-field input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+    .amount-field input:focus{ outline:none; }
+    .amount-field .unit{ font-size:16px; font-weight:750; color:var(--brand); }
+
+    input[type=range].slider{
+      -webkit-appearance:none; appearance:none; width:100%; height:12px; border-radius:999px;
+      background:
+        linear-gradient(90deg,var(--brand),var(--brand-2)) 0/ var(--pct,25%) 100% no-repeat,
+        var(--fill);
+      border:1px solid var(--line); cursor:pointer; margin:6px 0 4px;
+    }
+    input[type=range].slider::-webkit-slider-thumb{
+      -webkit-appearance:none; appearance:none; width:28px;height:28px;border-radius:50%;
+      background:#fff; border:none; cursor:grab;
+      box-shadow:0 2px 8px rgba(20,16,60,.28), 0 0 0 6px color-mix(in srgb, var(--brand) 22%, transparent);
+      transition:box-shadow .18s var(--ease), transform .12s var(--ease);
+    }
+    input[type=range].slider::-webkit-slider-thumb:active{ cursor:grabbing; transform:scale(1.08); }
+    input[type=range].slider::-moz-range-thumb{
+      width:28px;height:28px;border-radius:50%;background:#fff;border:none;cursor:grab;
+      box-shadow:0 2px 8px rgba(20,16,60,.28), 0 0 0 6px color-mix(in srgb, var(--brand) 22%, transparent);
+    }
+    .range-ends{ display:flex; justify-content:space-between; font-size:12px; color:var(--soft); font-weight:600; margin-top:2px; }
+    .presets{ display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+    .preset{
+      border:1px solid var(--line-2); background:var(--card); color:var(--muted);
+      font-size:12.5px; font-weight:650; padding:7px 12px; border-radius:999px; cursor:pointer;
+      transition:.18s var(--ease);
+    }
+    .preset:hover{ border-color:var(--brand); color:var(--brand); }
+    .preset.active{ background:var(--brand); border-color:var(--brand); color:#fff; }
+
+    /* ── Шаг 3: опции ─────────────────────────────────────────────────── */
+    .opts{ display:grid; gap:10px; }
+    .opt{
+      display:flex; align-items:center; gap:13px; padding:13px 15px; cursor:pointer; text-align:left;
+      border:1.5px solid var(--line-2); border-radius:var(--radius-s); background:var(--card);
+      transition:border-color .2s var(--ease), background .2s var(--ease), box-shadow .2s var(--ease);
+    }
+    .opt:hover{ border-color:var(--brand); box-shadow:var(--shadow-s); }
+    .opt .ico{ width:42px;height:42px;flex:none;border-radius:11px;display:grid;place-items:center; background:var(--fill); color:var(--brand); transition:.2s var(--ease); }
+    .opt .ico svg{ width:22px;height:22px; }
+    .opt .body{ flex:1; min-width:0; }
+    .opt .t{ display:block; font-weight:700; font-size:14.5px; }
+    .opt .d{ display:block; font-size:12px; color:var(--muted); margin-top:1px; }
+    .opt .price{ font-size:12.5px; font-weight:750; color:var(--brand-ink); white-space:nowrap; }
+    @media (prefers-color-scheme: dark){ .opt .price{ color:var(--brand-2); } }
+    .switch{ width:46px;height:27px;flex:none;border-radius:999px;background:var(--line-2); position:relative; transition:.24s var(--ease); }
+    .switch::after{ content:""; position:absolute; top:3px; left:3px; width:21px;height:21px;border-radius:50%; background:#fff; box-shadow:0 2px 5px rgba(0,0,0,.22); transition:.24s var(--ease-out); }
+    .opt[aria-pressed="true"]{ border-color:var(--brand); background:linear-gradient(180deg, color-mix(in srgb, var(--brand) 8%, var(--card)), var(--card)); }
+    .opt[aria-pressed="true"] .ico{ background:linear-gradient(145deg,var(--brand),var(--brand-2)); color:#fff; }
+    .opt[aria-pressed="true"] .switch{ background:linear-gradient(90deg,var(--brand),var(--brand-2)); }
+    .opt[aria-pressed="true"] .switch::after{ left:22px; }
+
+    /* ── Шаг 4: форма ─────────────────────────────────────────────────── */
+    .form{ display:grid; gap:14px; }
+    .field label{ display:block; font-size:12.5px; font-weight:700; color:var(--muted); margin:0 0 6px 2px; }
+    .inp{
+      display:flex; align-items:center; gap:10px;
+      border:1.5px solid var(--line-2); border-radius:var(--radius-s); background:var(--card);
+      padding:0 14px; transition:border-color .2s var(--ease), box-shadow .2s var(--ease);
+    }
+    .inp svg{ width:19px;height:19px; color:var(--soft); flex:none; }
+    .inp input{
+      border:none; background:transparent; width:100%; padding:14px 0; font-size:15px; color:var(--text);
+      font-family:inherit;
+    }
+    .inp input:focus{ outline:none; }
+    .inp:focus-within{ border-color:var(--brand); box-shadow:0 0 0 4px var(--ring); }
+    .inp.bad{ border-color:var(--bad); }
+    .inp.bad svg{ color:var(--bad); }
+    .err{ font-size:12px; color:var(--bad); font-weight:600; margin:6px 0 0 2px; display:none; }
+    .err.show{ display:block; animation:shake .4s var(--ease); }
+    @keyframes shake{ 0%,100%{transform:translateX(0);} 20%{transform:translateX(-5px);} 40%{transform:translateX(5px);} 60%{transform:translateX(-3px);} 80%{transform:translateX(3px);} }
+    .policy{ font-size:11.5px; color:var(--soft); line-height:1.5; margin-top:2px; display:flex; gap:7px; }
+    .policy svg{ width:15px;height:15px; color:var(--good); flex:none; margin-top:1px; }
+
+    /* ── Экран «Спасибо» ──────────────────────────────────────────────── */
+    .done{ text-align:center; padding:14px 6px 8px; animation:rise .5s var(--ease-out) both; }
+    .done .seal{
+      width:84px;height:84px;border-radius:50%; margin:6px auto 18px; display:grid; place-items:center;
+      background:linear-gradient(145deg,var(--good), #12b981); color:#fff;
+      box-shadow:0 18px 40px -14px rgba(23,166,115,.7);
+      animation:pop .5s var(--ease-out) .05s both;
+    }
+    @keyframes pop{ 0%{transform:scale(.4); opacity:0;} 60%{transform:scale(1.12);} 100%{transform:scale(1); opacity:1;} }
+    .done .seal svg{ width:44px;height:44px; }
+    .done .seal svg path{ stroke-dasharray:40; stroke-dashoffset:40; animation:draw .5s var(--ease-out) .35s forwards; }
+    @keyframes draw{ to{ stroke-dashoffset:0; } }
+    .done h2{ margin:0 0 8px; font-size:22px; font-weight:850; }
+    .done p{ margin:0 auto; max-width:400px; color:var(--muted); font-size:14px; line-height:1.6; }
+    .lead-id{
+      display:inline-flex; align-items:center; gap:8px; margin:18px auto 6px;
+      background:var(--fill); border:1px dashed var(--line-2); border-radius:12px;
+      padding:10px 16px; font-weight:750; letter-spacing:.5px; font-variant-numeric:tabular-nums;
+    }
+    .lead-id b{ color:var(--brand-ink); }
+    @media (prefers-color-scheme: dark){ .lead-id b{ color:var(--brand-2); } }
+    .summary{
+      margin:18px auto 0; text-align:left; max-width:420px;
+      border:1px solid var(--line); border-radius:var(--radius-s); overflow:hidden;
+    }
+    .summary .r{ display:flex; justify-content:space-between; gap:12px; padding:11px 15px; font-size:13.5px; border-top:1px solid var(--line); }
+    .summary .r:first-child{ border-top:none; }
+    .summary .r span{ color:var(--muted); }
+    .summary .r b{ font-weight:700; text-align:right; }
+    .summary .r.total{ background:var(--fill); font-size:15px; }
+    .summary .r.total b{ color:var(--brand-ink); }
+    @media (prefers-color-scheme: dark){ .summary .r.total b{ color:var(--brand-2); } }
+
+    /* ── Плавающая панель «Живая цена» + навигация ────────────────────── */
+    .sticky{
+      position:fixed; left:0; right:0; bottom:0; z-index:5;
+      display:flex; justify-content:center;
+      padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+      pointer-events:none;
+    }
+    .sticky .inner{
+      pointer-events:auto;
+      width:min(560px,100%);
+      display:flex; align-items:center; gap:12px;
+      background:color-mix(in srgb, var(--card) 82%, transparent);
+      backdrop-filter:saturate(160%) blur(16px);
+      -webkit-backdrop-filter:saturate(160%) blur(16px);
+      border:1px solid var(--line);
+      border-radius:18px; padding:11px 12px 11px 16px;
+      box-shadow:var(--shadow);
+    }
+    .price-info{ display:flex; flex-direction:column; min-width:0; position:relative; }
+    .price-label{ font-size:11.5px; color:var(--muted); font-weight:650; display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none; }
+    .price-label svg{ width:13px;height:13px; transition:transform .25s var(--ease); }
+    .price-info.open .price-label svg{ transform:rotate(180deg); }
+    .price-value{ font-size:23px; font-weight:900; letter-spacing:-.5px; font-variant-numeric:tabular-nums; line-height:1.1; }
+    .price-from{ font-size:11px; color:var(--soft); font-weight:600; }
+    .nav{ margin-left:auto; display:flex; gap:9px; align-items:center; }
+
+    .btn{
+      appearance:none; border:none; cursor:pointer; font-family:inherit; font-weight:750;
+      border-radius:13px; font-size:14.5px; transition:transform .12s var(--ease), box-shadow .2s var(--ease), background .2s var(--ease), opacity .2s;
+      display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+    }
+    .btn svg{ width:18px;height:18px; }
+    .btn:active{ transform:translateY(1px) scale(.99); }
+    .btn.ghost{ background:var(--fill); color:var(--muted); padding:12px 14px; }
+    .btn.ghost:hover{ color:var(--text); }
+    .btn.primary{
+      background:linear-gradient(135deg,var(--brand),var(--brand-2)); color:#fff; padding:13px 20px;
+      box-shadow:0 12px 26px -10px rgba(109,94,252,.85);
+      animation:pulse 2.6s var(--ease) infinite;
+    }
+    .btn.primary:hover{ box-shadow:0 16px 32px -10px rgba(109,94,252,1); transform:translateY(-1px); }
+    @keyframes pulse{ 0%,100%{ box-shadow:0 12px 26px -10px rgba(109,94,252,.85);} 50%{ box-shadow:0 12px 30px -8px rgba(109,94,252,1);} }
+    .btn.primary[disabled]{ opacity:.5; cursor:not-allowed; animation:none; box-shadow:none; filter:grayscale(.2); }
+    .btn.primary[disabled]:hover{ transform:none; }
+    .btn.hidden{ display:none; }
+
+    /* всплывающая расшифровка цены */
+    .breakdown{
+      position:absolute; bottom:calc(100% + 14px); left:0; width:290px;
+      background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow);
+      padding:8px; opacity:0; transform:translateY(8px) scale(.98); pointer-events:none;
+      transition:.24s var(--ease-out); transform-origin:bottom left;
+    }
+    .price-info.open .breakdown{ opacity:1; transform:none; pointer-events:auto; }
+    .breakdown .b-r{ display:flex; justify-content:space-between; gap:10px; padding:8px 10px; font-size:13px; border-radius:9px; }
+    .breakdown .b-r span{ color:var(--muted); }
+    .breakdown .b-r b{ font-weight:700; font-variant-numeric:tabular-nums; }
+    .breakdown .b-r.sum{ border-top:1px dashed var(--line-2); margin-top:4px; padding-top:11px; }
+    .breakdown .b-r.sum b{ color:var(--brand-ink); }
+    @media (prefers-color-scheme: dark){ .breakdown .b-r.sum b{ color:var(--brand-2); } }
+    .breakdown .empty{ padding:12px 10px; font-size:12.5px; color:var(--soft); text-align:center; }
+    .breakdown::after{ content:""; position:absolute; top:100%; left:26px; border:7px solid transparent; border-top-color:var(--card); }
+
+    .fineprint{ color:rgba(255,255,255,.55); font-size:11.5px; margin-top:20px; text-align:center; max-width:520px; line-height:1.6; }
+    .fineprint a{ color:rgba(255,255,255,.8); }
+
+    @media (max-width:430px){
+      .head, .progress, .content{ padding-left:18px; padding-right:18px; }
+      .price-value{ font-size:20px; }
+      .btn.primary{ padding:12px 15px; }
+      .btn.ghost{ padding:12px; }
+      .tcard .rate{ display:none; }
+    }
+    @media (prefers-reduced-motion: reduce){
+      *{ animation-duration:.001ms !important; transition-duration:.05ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="aura"><b></b><b></b><b></b></div>
+
+  <main class="stage">
+    <div class="brandline">
+      <span class="logo" id="logoSlot"></span>
+      <span class="name">FlexiCalc <span>· ремонт «под ключ»</span></span>
+    </div>
+
+    <section class="card" id="card" aria-live="polite">
+      <div class="head">
+        <h1>Калькулятор стоимости ремонта</h1>
+        <p>Ответьте на 4 коротких вопроса — и увидите точную смету прямо сейчас. Без звонков и ожидания.</p>
+        <div class="trust" id="trust"></div>
+      </div>
+
+      <div class="progress" id="progress"></div>
+
+      <div class="content" id="content"></div>
+    </section>
+
+    <p class="fineprint">Демонстрационный виджет FlexiCalc. Цены — ориентировочные, для примера. Данные заявки не отправляются на сервер, а выводятся в консоль браузера (см. функцию <code>dispatchLead</code> в коде — точка интеграции с вашей CRM).</p>
+  </main>
+
+  <div class="sticky" id="sticky">
+    <div class="inner">
+      <div class="price-info" id="priceInfo">
+        <span class="price-label" id="priceToggle">Примерная стоимость <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></span>
+        <span class="price-value" id="priceValue">0&nbsp;₽</span>
+        <div class="breakdown" id="breakdown"></div>
+      </div>
+      <div class="nav">
+        <button class="btn ghost hidden" id="btnBack" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+          Назад
+        </button>
+        <button class="btn primary" id="btnNext" type="button">
+          <span id="nextLabel">Далее</span>
+          <svg id="nextIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    "use strict";
+
+    /* ═══════════════════════════════════════════════════════════════════
+       ИКОНКИ (в стиле Lucide — inline SVG, без внешних зависимостей)
+       ═══════════════════════════════════════════════════════════════════ */
+    var P = {
+      calc:'<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>',
+      building:'<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
+      home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+      store:'<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/>',
+      ruler:'<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+      wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+      zap:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+      flame:'<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+      trash:'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+      rocket:'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+      user:'<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+      phone:'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+      mail:'<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+      check:'<path d="M20 6 9 17l-5-5"/>',
+      shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+      clock:'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+      gauge:'<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+      send:'<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>'
+    };
+    function svg(name, w){
+      w = w || 24;
+      return '<svg viewBox="0 0 24 24" width="'+w+'" height="'+w+'" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+(P[name]||'')+'</svg>';
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       КОНФИГУРАЦИЯ КАЛЬКУЛЯТОРА (единый источник правды для цены и UI)
+       ═══════════════════════════════════════════════════════════════════ */
+    var CFG = {
+      steps: ['Тип объекта','Площадь','Доп. опции','Контакты'],
+      tariffs: [
+        { id:'new',        icon:'building', title:'Новостройка',        desc:'Чистовая отделка «с нуля»',        rate:6000 },
+        { id:'secondary',  icon:'home',     title:'Вторичное жильё',     desc:'С демонтажом и подготовкой',       rate:7500 },
+        { id:'commercial', icon:'store',    title:'Коммерческое помещение', desc:'Офисы, шоурумы, HoReCa',        rate:9000 }
+      ],
+      area: { min:20, max:200, step:1, def:50, unit:'м²', presets:[35,50,75,120] },
+      options: [
+        { id:'design',   icon:'ruler',  title:'Дизайн-проект',        desc:'3D-визуализация и рабочие чертежи',   type:'flat',    value:55000 },
+        { id:'plumbing', icon:'wrench',  title:'Замена сантехники',    desc:'Трубы, разводка, приборы',            type:'flat',    value:38000 },
+        { id:'electric', icon:'zap',     title:'Электромонтаж под ключ', desc:'Проводка, розетки и щиток',         type:'perM2',   value:1200 },
+        { id:'heating',  icon:'flame',   title:'Тёплый пол',           desc:'Водяной или электрический контур',    type:'perM2',   value:2500 },
+        { id:'trash',    icon:'trash',   title:'Вывоз мусора',         desc:'Демонтаж и утилизация отходов',       type:'flat',    value:12000 },
+        { id:'urgent',   icon:'rocket',  title:'Срочный ремонт',       desc:'Ускоренные сроки, бригада +30%',      type:'percent', value:20 }
+      ]
+    };
+
+    /* ═══════════════════════════════════════════════════════════════════
+       СОСТОЯНИЕ ПРИЛОЖЕНИЯ
+       ═══════════════════════════════════════════════════════════════════ */
+    var state = {
+      step: 1,
+      tariff: CFG.tariffs[0].id,   // по умолчанию — первый тариф, чтобы цена была «живой» сразу
+      area: CFG.area.def,
+      options: {},                 // { optionId: true }
+      contact: { name:'', phone:'', email:'' },
+      phoneDigits: '',
+      direction: 'next',
+      submitted: false,
+      leadId: null
+    };
+
+    /* ═══════════════════════════════════════════════════════════════════
+       DYNAMIC PRICING ENGINE — расчёт «на лету»
+       ═══════════════════════════════════════════════════════════════════ */
+    function priceBreakdown(){
+      var tariff = CFG.tariffs.filter(function(t){ return t.id===state.tariff; })[0] || CFG.tariffs[0];
+      var work = tariff.rate * state.area;
+      var items = [{ label:'Работы · '+tariff.title, note: fmt(tariff.rate)+' ₽/м² × '+state.area+' м²', amount: work }];
+      var addFlat = 0, addPerM2 = 0, urgentPct = 0;
+
+      CFG.options.forEach(function(o){
+        if(!state.options[o.id]) return;
+        if(o.type==='flat'){ addFlat += o.value; items.push({ label:o.title, note:'фикс.', amount:o.value }); }
+        else if(o.type==='perM2'){ var a=o.value*state.area; addPerM2 += a; items.push({ label:o.title, note: fmt(o.value)+' ₽/м² × '+state.area, amount:a }); }
+        else if(o.type==='percent'){ urgentPct += o.value; }
+      });
+
+      var subtotal = work + addFlat + addPerM2;
+      var urgentAmount = Math.round(subtotal * urgentPct/100);
+      if(urgentPct>0){ items.push({ label:'Срочность', note:'+'+urgentPct+'%', amount: urgentAmount }); }
+      var total = subtotal + urgentAmount;
+      return { items:items, total: Math.round(total), work:work, subtotal:subtotal, urgentPct:urgentPct };
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       ФОРМАТИРОВАНИЕ И СЧЁТЧИК ЦЕНЫ
+       ═══════════════════════════════════════════════════════════════════ */
+    var nf = (typeof Intl!=='undefined' && Intl.NumberFormat) ? new Intl.NumberFormat('ru-RU') : null;
+    function fmt(n){ n = Math.round(n); return nf ? nf.format(n) : String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' '); }
+
+    var displayed = 0, rafId = null;
+    function animatePrice(to){
+      var el = document.getElementById('priceValue');
+      if(!el) return;
+      var from = displayed, start = null, dur = 620;
+      if(rafId) cancelAnimationFrame(rafId);
+      function ease(t){ return 1 - Math.pow(1-t, 3); }
+      function tick(ts){
+        if(start===null) start = ts;
+        var p = Math.min(1, (ts-start)/dur);
+        var val = Math.round(from + (to-from)*ease(p));
+        el.innerHTML = fmt(val)+'&nbsp;₽';
+        if(p<1){ rafId = requestAnimationFrame(tick); } else { displayed = to; }
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function refreshPrice(){
+      var b = priceBreakdown();
+      animatePrice(b.total);
+      renderBreakdown(b);
+    }
+
+    function renderBreakdown(b){
+      var box = document.getElementById('breakdown');
+      if(!box) return;
+      var rows = b.items.map(function(it){
+        return '<div class="b-r"><span>'+esc(it.label)+'</span><b>'+fmt(it.amount)+' ₽</b></div>';
+      }).join('');
+      rows += '<div class="b-r sum"><span>Итого</span><b>'+fmt(b.total)+' ₽</b></div>';
+      box.innerHTML = rows;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       УТИЛИТЫ
+       ═══════════════════════════════════════════════════════════════════ */
+    function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+    function el(id){ return document.getElementById(id); }
+
+    function maskPhone(v){
+      var d = String(v).replace(/\D/g,'');
+      if(d.charAt(0)==='8') d = '7'+d.slice(1);
+      if(d.charAt(0)!=='7') d = '7'+d;
+      d = d.slice(0,11);
+      var r = '+7';
+      if(d.length>1) r += ' (' + d.slice(1,4);
+      if(d.length>=4) r += ')';
+      if(d.length>4)  r += ' ' + d.slice(4,7);
+      if(d.length>7)  r += '-' + d.slice(7,9);
+      if(d.length>9)  r += '-' + d.slice(9,11);
+      return { formatted:r, digits:d };
+    }
+    function nameValid(){ return state.contact.name.trim().length>=2; }
+    function phoneValid(){ return state.phoneDigits.length===11; }
+    function emailValid(){ var e=state.contact.email.trim(); return e==='' || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e); }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       РЕНДЕР: прогресс, доверие, шаги
+       ═══════════════════════════════════════════════════════════════════ */
+    function renderTrust(){
+      el('trust').innerHTML =
+        '<span class="chip">'+svg('gauge',14)+'Расчёт за 30 секунд</span>'+
+        '<span class="chip">'+svg('shield',14)+'Без спама и звонков-роботов</span>'+
+        '<span class="chip">'+svg('clock',14)+'Ответ менеджера за 10 минут</span>';
+    }
+
+    function renderProgress(){
+      var total = CFG.steps.length;
+      var pct = Math.round(state.step/total*100);
+      var dots = '';
+      for(var i=1;i<=total;i++){
+        var cls = i<state.step ? 'done' : (i===state.step ? 'now' : '');
+        dots += '<i class="'+cls+'"></i>';
+      }
+      el('progress').innerHTML =
+        '<div class="row">'+
+          '<span class="step-of">Шаг '+state.step+' из '+total+' · '+pct+'%</span>'+
+          '<span class="step-name">'+esc(CFG.steps[state.step-1])+'</span>'+
+        '</div>'+
+        '<div class="bar"><i style="width:'+pct+'%"></i></div>'+
+        '<div class="dots">'+dots+'</div>';
+    }
+
+    function stepHTML(){
+      if(state.step===1) return step1();
+      if(state.step===2) return step2();
+      if(state.step===3) return step3();
+      return step4();
+    }
+
+    function step1(){
+      var cards = CFG.tariffs.map(function(t){
+        var on = state.tariff===t.id;
+        return '<button class="tcard" type="button" data-tariff="'+t.id+'" aria-pressed="'+on+'">'+
+          '<span class="ico">'+svg(t.icon)+'</span>'+
+          '<span class="body"><span class="t">'+esc(t.title)+'</span><span class="d">'+esc(t.desc)+'</span></span>'+
+          '<span class="rate">от '+fmt(t.rate)+' ₽/м²</span>'+
+          '<span class="radio">'+svg('check',14)+'</span>'+
+        '</button>';
+      }).join('');
+      return '<div class="step-title">С чего начнём?</div>'+
+             '<p class="step-sub">Выберите тип объекта — от него зависит базовая ставка за квадратный метр.</p>'+
+             '<div class="cards stagger">'+cards+'</div>';
+    }
+
+    function step2(){
+      var a = CFG.area;
+      var presets = a.presets.map(function(v){
+        return '<button class="preset'+(state.area===v?' active':'')+'" type="button" data-preset="'+v+'">'+v+' м²</button>';
+      }).join('');
+      return '<div class="step-title">Какая площадь помещения?</div>'+
+             '<p class="step-sub">Двигайте ползунок или введите точное значение — смета пересчитается мгновенно.</p>'+
+             '<div class="scaler stagger">'+
+               '<div class="amount-box">'+
+                 '<span class="lab">Площадь помещения</span>'+
+                 '<span class="amount-field"><input id="areaInput" type="number" inputmode="numeric" min="'+a.min+'" max="'+a.max+'" value="'+state.area+'" aria-label="Площадь в квадратных метрах"><span class="unit">'+a.unit+'</span></span>'+
+               '</div>'+
+               '<input id="areaRange" class="slider" type="range" min="'+a.min+'" max="'+a.max+'" step="'+a.step+'" value="'+state.area+'" aria-label="Ползунок площади">'+
+               '<div class="range-ends"><span>'+a.min+' м²</span><span>'+a.max+' м²</span></div>'+
+               '<div class="presets">'+presets+'</div>'+
+             '</div>';
+    }
+
+    function step3(){
+      var opts = CFG.options.map(function(o){
+        var on = !!state.options[o.id];
+        var price = o.type==='flat' ? ('+ '+fmt(o.value)+' ₽')
+                  : o.type==='perM2' ? ('+ '+fmt(o.value)+' ₽/м²')
+                  : ('+ '+o.value+'%');
+        return '<button class="opt" type="button" data-opt="'+o.id+'" aria-pressed="'+on+'">'+
+          '<span class="ico">'+svg(o.icon)+'</span>'+
+          '<span class="body"><span class="t">'+esc(o.title)+'</span><span class="d">'+esc(o.desc)+'</span></span>'+
+          '<span class="price">'+price+'</span>'+
+          '<span class="switch"></span>'+
+        '</button>';
+      }).join('');
+      return '<div class="step-title">Добавим сопутствующие услуги?</div>'+
+             '<p class="step-sub">Подключайте только то, что нужно — цена обновляется в реальном времени.</p>'+
+             '<div class="opts stagger">'+opts+'</div>';
+    }
+
+    function step4(){
+      var c = state.contact;
+      return '<div class="step-title">Куда прислать готовую смету?</div>'+
+             '<p class="step-sub">Оставьте контакты — зафиксируем расчёт и рассчитанную цену за вами.</p>'+
+             '<div class="form stagger">'+
+               field('name','user','Ваше имя','Как к вам обращаться','text', c.name) +
+               field('phone','phone','Телефон','+7 (___) ___-__-__','tel', c.phone) +
+               field('email','mail','E-mail <span style="font-weight:600;color:var(--soft)">(необязательно)</span>','you@example.com','email', c.email) +
+               '<div class="policy">'+svg('shield',15)+'<span>Нажимая «Отправить заявку», вы соглашаетесь на обработку персональных данных. Мы не передаём контакты третьим лицам.</span></div>'+
+             '</div>';
+    }
+    function field(id, icon, label, ph, type, val){
+      return '<div class="field">'+
+        '<label for="f_'+id+'">'+label+'</label>'+
+        '<div class="inp" id="wrap_'+id+'">'+svg(icon,19)+
+          '<input id="f_'+id+'" type="'+type+'" placeholder="'+esc(ph)+'" value="'+esc(val)+'" autocomplete="'+(id==='name'?'name':id==='phone'?'tel':'email')+'">'+
+        '</div>'+
+        '<div class="err" id="err_'+id+'"></div>'+
+      '</div>';
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       ПРИВЯЗКА СОБЫТИЙ ПОСЛЕ РЕНДЕРА ШАГА
+       ═══════════════════════════════════════════════════════════════════ */
+    function bindStep(){
+      if(state.step===1){
+        Array.prototype.forEach.call(document.querySelectorAll('[data-tariff]'), function(btn){
+          btn.addEventListener('click', function(){
+            state.tariff = btn.getAttribute('data-tariff');
+            Array.prototype.forEach.call(document.querySelectorAll('[data-tariff]'), function(b){
+              b.setAttribute('aria-pressed', b===btn ? 'true':'false');
+            });
+            refreshPrice();
+          });
+        });
+      }
+
+      if(state.step===2){
+        var range = el('areaRange'), input = el('areaInput');
+        var a = CFG.area;
+        function setPct(){ var pct = (state.area-a.min)/(a.max-a.min)*100; range.style.setProperty('--pct', pct+'%'); }
+        function apply(v, from){
+          v = Math.round(v); if(isNaN(v)) v = a.min;
+          v = Math.max(a.min, Math.min(a.max, v));
+          state.area = v;
+          if(from!=='range') range.value = v;
+          if(from!=='input') input.value = v;
+          setPct();
+          Array.prototype.forEach.call(document.querySelectorAll('[data-preset]'), function(p){
+            p.classList.toggle('active', parseInt(p.getAttribute('data-preset'),10)===v);
+          });
+          refreshPrice();
+        }
+        setPct();
+        range.addEventListener('input', function(){ apply(parseInt(range.value,10),'range'); });
+        input.addEventListener('input', function(){
+          var raw = input.value.replace(/\D/g,'');
+          if(raw==='') { state.area = a.min; range.value=a.min; setPct(); refreshPrice(); return; }
+          apply(parseInt(raw,10),'input');
+        });
+        input.addEventListener('blur', function(){ apply(parseInt(input.value,10)||a.min,'none'); });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-preset]'), function(p){
+          p.addEventListener('click', function(){ apply(parseInt(p.getAttribute('data-preset'),10),'none'); });
+        });
+      }
+
+      if(state.step===3){
+        Array.prototype.forEach.call(document.querySelectorAll('[data-opt]'), function(btn){
+          btn.addEventListener('click', function(){
+            var id = btn.getAttribute('data-opt');
+            state.options[id] = !state.options[id];
+            btn.setAttribute('aria-pressed', state.options[id] ? 'true':'false');
+            refreshPrice();
+          });
+        });
+      }
+
+      if(state.step===4){
+        var nameEl = el('f_name'), phoneEl = el('f_phone'), emailEl = el('f_email');
+        nameEl.addEventListener('input', function(){ state.contact.name = nameEl.value; clearErr('name'); updateNav(); });
+        phoneEl.addEventListener('input', function(){
+          var m = maskPhone(phoneEl.value);
+          phoneEl.value = m.formatted; state.contact.phone = m.formatted; state.phoneDigits = m.digits;
+          clearErr('phone'); updateNav();
+        });
+        phoneEl.addEventListener('focus', function(){ if(!phoneEl.value){ phoneEl.value='+7 '; state.contact.phone='+7 '; } });
+        emailEl.addEventListener('input', function(){ state.contact.email = emailEl.value; clearErr('email'); updateNav(); });
+        [nameEl,phoneEl,emailEl].forEach(function(f){ f.addEventListener('blur', validateField); });
+      }
+    }
+
+    function validateField(e){
+      var f = e.target.id.replace('f_','');
+      if(f==='name' && !nameValid()) showErr('name','Укажите имя (минимум 2 символа)');
+      if(f==='phone' && !phoneValid() && state.phoneDigits.length>1) showErr('phone','Введите телефон полностью');
+      if(f==='email' && !emailValid()) showErr('email','Проверьте правильность e-mail');
+    }
+    function showErr(id, msg){
+      var wrap = el('wrap_'+id), err = el('err_'+id);
+      if(wrap) wrap.classList.add('bad');
+      if(err){ err.textContent = msg; err.classList.add('show'); }
+    }
+    function clearErr(id){
+      var wrap = el('wrap_'+id), err = el('err_'+id);
+      if(wrap) wrap.classList.remove('bad');
+      if(err) err.classList.remove('show');
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       НАВИГАЦИЯ + ПЕРЕХОДЫ МЕЖДУ ШАГАМИ (Framer-Motion-подобные)
+       ═══════════════════════════════════════════════════════════════════ */
+    function renderStep(enterClass){
+      var content = el('content');
+      content.className = 'content ' + (enterClass || 'anim-enter-right');
+      content.innerHTML = stepHTML();
+      bindStep();
+      renderProgress();
+      updateNav();
+    }
+
+    function transitionTo(newStep, direction){
+      state.direction = direction;
+      var content = el('content');
+      var exitClass = direction==='next' ? 'anim-exit-left' : 'anim-exit-right';
+      var enterClass = direction==='next' ? 'anim-enter-right' : 'anim-enter-left';
+      content.className = 'content ' + exitClass;
+      var done = false;
+      function swap(){
+        if(done) return; done = true;
+        state.step = newStep;
+        renderStep(enterClass);
+      }
+      content.addEventListener('animationend', swap, { once:true });
+      setTimeout(swap, 260); // страховка, если animationend не сработает
+    }
+
+    function goNext(){
+      if(state.step < CFG.steps.length){
+        transitionTo(state.step+1, 'next');
+      } else {
+        submit();
+      }
+    }
+    function goBack(){
+      if(state.step > 1) transitionTo(state.step-1, 'back');
+    }
+
+    function updateNav(){
+      var back = el('btnBack'), next = el('btnNext'), label = el('nextLabel'), icon = el('nextIcon');
+      back.classList.toggle('hidden', state.step===1);
+      if(state.step === CFG.steps.length){
+        label.textContent = 'Отправить заявку';
+        icon.innerHTML = P.send;
+        var ok = nameValid() && phoneValid() && emailValid();
+        next.disabled = !ok;
+      } else {
+        label.textContent = 'Далее';
+        icon.innerHTML = '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>';
+        next.disabled = false;
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       LEAD DISPATCHER — сборка JSON и «отправка»
+       ═══════════════════════════════════════════════════════════════════ */
+    function buildPayload(){
+      var b = priceBreakdown();
+      var tariff = CFG.tariffs.filter(function(t){ return t.id===state.tariff; })[0];
+      var chosen = CFG.options.filter(function(o){ return state.options[o.id]; }).map(function(o){ return { id:o.id, title:o.title }; });
+      return {
+        leadId: state.leadId,
+        createdAt: new Date().toISOString(),
+        tariff: { id:tariff.id, title:tariff.title, rate:tariff.rate },
+        area: state.area,
+        areaUnit: CFG.area.unit,
+        options: chosen,
+        price: { total: b.total, work: b.work, currency: 'RUB' },
+        contact: { name: state.contact.name.trim(), phone: state.contact.phone, email: state.contact.email.trim() }
+      };
+    }
+
+    // Точка интеграции с реальным бэкендом/CRM. Здесь — вывод в консоль.
+    function dispatchLead(payload){
+      console.log('%cFlexiCalc · новая заявка (JSON-пакет):', 'color:#6d5efc;font-weight:bold');
+      console.log(JSON.stringify(payload, null, 2));
+      // Пример реальной отправки:
+      // return fetch('/api/lead', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    }
+
+    function submit(){
+      // финальная валидация
+      var ok = true;
+      if(!nameValid()){ showErr('name','Укажите имя (минимум 2 символа)'); ok=false; }
+      if(!phoneValid()){ showErr('phone','Введите телефон полностью'); ok=false; }
+      if(!emailValid()){ showErr('email','Проверьте правильность e-mail'); ok=false; }
+      if(!ok){ updateNav(); return; }
+
+      state.leadId = 'FC-' + Date.now().toString(36).toUpperCase().slice(-6);
+      state.submitted = true;
+      var payload = buildPayload();
+      dispatchLead(payload);
+      renderThankYou(payload);
+    }
+
+    function renderThankYou(payload){
+      // спрятать прогресс и плавающую панель
+      el('progress').style.display = 'none';
+      el('sticky').style.display = 'none';
+      var head = document.querySelector('.head'); if(head) head.style.display = 'none';
+
+      var optsText = payload.options.length ? payload.options.map(function(o){ return o.title; }).join(', ') : '—';
+      var content = el('content');
+      content.className = 'content';
+      content.innerHTML =
+        '<div class="done">'+
+          '<div class="seal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>'+
+          '<h2>Заявка принята!</h2>'+
+          '<p>Расчёт стоимости сохранён под вашим номером. Менеджер свяжется с вами в течение 10 минут.</p>'+
+          '<div class="lead-id">'+svg('shield',16)+'Номер заявки: <b>'+esc(payload.leadId)+'</b></div>'+
+          '<div class="summary">'+
+            row('Тип объекта', payload.tariff.title)+
+            row('Площадь', payload.area+' '+payload.areaUnit)+
+            row('Доп. опции', optsText)+
+            row('Имя', payload.contact.name)+
+            row('Телефон', payload.contact.phone)+
+            (payload.contact.email ? row('E-mail', payload.contact.email) : '')+
+            '<div class="r total"><span>Итоговая стоимость</span><b>'+fmt(payload.price.total)+' ₽</b></div>'+
+          '</div>'+
+        '</div>';
+    }
+    function row(k,v){ return '<div class="r"><span>'+esc(k)+'</span><b>'+esc(v)+'</b></div>'; }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       ИНИЦИАЛИЗАЦИЯ
+       ═══════════════════════════════════════════════════════════════════ */
+    function init(){
+      el('logoSlot').innerHTML = svg('calc',22);
+      renderTrust();
+      renderProgress();
+      renderStep('anim-enter-right');
+      refreshPrice();
+
+      el('btnNext').addEventListener('click', goNext);
+      el('btnBack').addEventListener('click', goBack);
+
+      // всплывающая расшифровка цены
+      var info = el('priceInfo'), toggle = el('priceToggle');
+      toggle.addEventListener('click', function(e){ e.stopPropagation(); info.classList.toggle('open'); });
+      document.addEventListener('click', function(e){ if(!info.contains(e.target)) info.classList.remove('open'); });
+
+      // Enter в форме → следующий шаг / отправка
+      document.addEventListener('keydown', function(e){
+        if(e.key==='Enter' && !state.submitted){
+          var t = e.target;
+          if(t && t.tagName==='INPUT' && t.type==='number') return;
+          if(!el('btnNext').disabled){ e.preventDefault(); goNext(); }
+        }
+      });
+    }
+
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+  })();
+  </script>
+</body>
+</html>
