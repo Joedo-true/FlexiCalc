@@ -1,0 +1,49 @@
+name: Deploy to GitHub Pages
+
+# Публикует статический сайт (index.html в корне) на GitHub Pages.
+# Работает прямо с рабочей ветки — сливать в main не обязательно.
+#
+# Как включить (один раз):
+#   Settings → Pages → Build and deployment → Source: "GitHub Actions".
+# После этого каждый push в ветку ниже автоматически публикует сайт.
+
+on:
+  push:
+    branches:
+      - claude/flexicalc-interactive-calculator-j0qq0l
+      - main
+  workflow_dispatch:
+
+# Права, необходимые для деплоя на Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Одновременно — только один деплой; лишние запуски отменяются
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Публикуем корень репозитория — там лежит index.html
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

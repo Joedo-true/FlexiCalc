@@ -16,6 +16,40 @@
 - Работает офлайн: весь код (разметка, стили, логика, иконки) — внутри одного
   файла, без внешних CDN и зависимостей.
 
+## Публикация на GitHub Pages
+
+Сайт полностью статичен, а `index.html` лежит в корне, поэтому Pages отдаёт его
+без настройки путей. Ошибка **404** обычно означает лишь одно: Pages пытается
+отдавать контент из ветки/источника, где его нет. Есть два рабочих способа.
+
+### Способ 1 — GitHub Actions (рекомендуется, ветку сливать не нужно)
+
+В репозитории уже есть workflow `.github/workflows/deploy-pages.yml`, который
+публикует сайт прямо с рабочей ветки.
+
+1. Откройте **Settings → Pages**.
+2. В разделе **Build and deployment → Source** выберите **GitHub Actions**.
+3. Готово. На каждый push в ветку `claude/flexicalc-interactive-calculator-j0qq0l`
+   (или `main`) сайт публикуется автоматически. Запустить вручную можно во вкладке
+   **Actions → Deploy to GitHub Pages → Run workflow**.
+
+Адрес сайта появится в логе workflow и в **Settings → Pages** — вида
+`https://<owner>.github.io/<repo>/`.
+
+> Если workflow падает с ошибкой *«Branch is not allowed to deploy to
+> github-pages due to environment protection rules»* — зайдите в
+> **Settings → Environments → github-pages → Deployment branches and tags** и
+> добавьте рабочую ветку (или выберите «No restriction»).
+
+### Способ 2 — Deploy from a branch (без workflow)
+
+1. Откройте **Settings → Pages → Build and deployment → Source**:
+   выберите **Deploy from a branch**.
+2. Branch: `claude/flexicalc-interactive-calculator-j0qq0l`, папка: **`/ (root)`** → **Save**.
+3. Через минуту сайт будет доступен по адресу `https://<owner>.github.io/<repo>/`.
+
+Файл `.nojekyll` в корне отключает обработку Jekyll — сайт отдаётся «как есть».
+
 ## Что внутри (по функциональным блокам ТЗ)
 
 1. **Multi-Step Stepper Engine** — переключение экранов с валидацией:
